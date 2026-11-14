@@ -1,0 +1,45 @@
+---
+description: Write application code in TypeScript
+alwaysApply: true
+---
+
+# TypeScript
+
+Write all application code in TypeScript (`.ts` / `.tsx`). Do not add new `.js` or `.jsx` source files.
+
+Use strict typing. Prefer explicit props and return types on exported functions. Avoid `any`; use `unknown` and narrow, or a precise type.
+
+```ts
+// ❌ BAD
+export function formatPrice(value) {
+  return "$" + value;
+}
+
+// ✅ GOOD
+export function formatPrice(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
+}
+```
+
+```tsx
+// ❌ BAD
+export default function ProductCard(props: any) {
+  return <article>{props.title}</article>;
+}
+
+// ✅ GOOD
+type ProductCardProps = {
+  title: string;
+};
+
+export default function ProductCard({ title }: ProductCardProps) {
+  return <article className="text-sm">{title}</article>;
+}
+```
+
+- Import from `@/` (`src/*`) instead of long relative paths when crossing folders.
+- Colocate types next to the module that uses them; export only when shared.
+- Keep `strict` TypeScript; do not weaken `tsconfig.json` to silence errors.

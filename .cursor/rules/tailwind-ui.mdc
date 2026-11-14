@@ -1,0 +1,27 @@
+---
+description: Use Tailwind CSS for all UI styling
+alwaysApply: true
+---
+
+# Tailwind for UI
+
+Style every UI with Tailwind utilities. Do not add CSS Modules, styled-components, Emotion, Sass, or large inline `style={{}}` objects for layout, spacing, color, or typography.
+
+This project uses **Tailwind CSS v4** (`@import "tailwindcss"` in `src/app/globals.css`). Put shared tokens in `@theme`; keep component styles in `className`.
+
+```tsx
+// ❌ BAD — custom CSS or inline layout styles
+<div style={{ display: "flex", gap: 16 }} className="card">
+  <h1>Catalog</h1>
+</div>
+
+// ✅ GOOD — Tailwind utilities
+<div className="flex items-center gap-4 rounded-lg bg-zinc-50 p-4 dark:bg-zinc-900">
+  <h1 className="text-lg font-semibold tracking-tight">Catalog</h1>
+</div>
+```
+
+- Prefer utilities on JSX (`className`) over new CSS files.
+- Extend design tokens in `src/app/globals.css` (`@theme`) instead of one-off hex values when a token will be reused.
+- Use responsive and dark variants (`sm:`, `md:`, `dark:`) rather than extra stylesheets.
+- Do not fight Prettier class sorting; `prettier-plugin-tailwindcss` is configured.
