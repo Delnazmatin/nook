@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FiChevronLeft } from "react-icons/fi";
 import Breadcrumbs from "@/components/Breadcrumbs";
+import FavoriteButton from "@/components/FavoriteButton";
 import ProductGallery from "@/components/ProductGallery";
 import ProductOptions from "@/components/ProductOptions";
 import { categoryRoutes, getProductById, productIds } from "@/data/products";
@@ -74,9 +75,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-zinc-950 sm:text-4xl">
                 {product.name}
               </h1>
-              <p className="mt-4 text-lg font-medium text-zinc-950">
-                {formatPrice(product.price)}
-              </p>
+              <div className="mt-4 flex items-center justify-between gap-4">
+                <p className="text-lg font-medium text-zinc-950">
+                  {formatPrice(product.price)}
+                </p>
+                <FavoriteButton
+                  productId={product.id}
+                  productName={product.name}
+                />
+              </div>
             </div>
 
             <p className="max-w-prose text-base leading-7 text-zinc-600">

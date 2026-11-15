@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { FiHeart, FiMenu, FiSearch, FiUser, FiX } from "react-icons/fi";
+import { useFavorites } from "@/context/FavoritesContext";
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -30,6 +31,13 @@ function IconAction({ label, children }: IconActionProps) {
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { favorites, isReady } = useFavorites();
+
+  const favoriteCount = isReady ? favorites.length : 0;
+  const favoriteLabel =
+    favoriteCount > 0
+      ? `Favorites, ${favoriteCount} ${favoriteCount === 1 ? "item" : "items"}`
+      : "Favorites";
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-200/80 bg-white/90 backdrop-blur-md">
@@ -61,9 +69,24 @@ export default function Header() {
             <IconAction label="Search">
               <FiSearch className="size-5" aria-hidden />
             </IconAction>
-            <IconAction label="Favorites">
-              <FiHeart className="size-5" aria-hidden />
-            </IconAction>
+            <Link
+              href="/favorites"
+              aria-label={favoriteLabel}
+              className="relative rounded-md p-2 text-zinc-700 transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+            >
+              <FiHeart
+                aria-hidden
+                className={`size-5 ${favoriteCount > 0 ? "text-gold fill-current" : ""}`}
+              />
+              {favoriteCount > 0 ? (
+                <span
+                  aria-hidden
+                  className="bg-gold absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full text-[10px] leading-none font-semibold text-white"
+                >
+                  {favoriteCount > 9 ? "9+" : favoriteCount}
+                </span>
+              ) : null}
+            </Link>
             <IconAction label="Profile">
               <FiUser className="size-5" aria-hidden />
             </IconAction>
@@ -104,6 +127,15 @@ export default function Header() {
                 </Link>
               </li>
             ))}
+            <li>
+              <Link
+                href="/favorites"
+                className="block rounded-md px-3 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 hover:text-zinc-950"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Favorites{favoriteCount > 0 ? ` (${favoriteCount})` : ""}
+              </Link>
+            </li>
           </ul>
         </nav>
       ) : null}
