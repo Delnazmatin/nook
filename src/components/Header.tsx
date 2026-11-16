@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FiHeart, FiMenu, FiSearch, FiUser, FiX } from "react-icons/fi";
+import SearchPanel from "@/components/SearchPanel";
 import { useFavorites } from "@/context/FavoritesContext";
 import { useProfile } from "@/context/ProfileContext";
 
@@ -16,14 +17,26 @@ const navLinks = [
 type IconActionProps = {
   label: string;
   children: ReactNode;
+  onClick?: () => void;
+  isExpanded?: boolean;
+  controlsId?: string;
 };
 
-function IconAction({ label, children }: IconActionProps) {
+function IconAction({
+  label,
+  children,
+  onClick,
+  isExpanded,
+  controlsId,
+}: IconActionProps) {
   return (
     <button
       type="button"
       aria-label={label}
-      className="rounded-md p-2 text-zinc-700 transition-colors hover:bg-zinc-100 hover:text-zinc-950"
+      aria-expanded={isExpanded}
+      aria-controls={controlsId}
+      onClick={onClick}
+      className="rounded-md p-2 text-zinc-700 transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
     >
       {children}
     </button>
@@ -32,8 +45,35 @@ function IconAction({ label, children }: IconActionProps) {
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchToggleRef = useRef<HTMLDivElement>(null);
+  const searchPanelRef = useRef<HTMLDivElement>(null);
   const { favorites, isReady } = useFavorites();
   const { user } = useProfile();
+
+  useEffect(() => {
+    if (!isSearchOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node;
+
+      if (
+        searchToggleRef.current?.contains(target) ||
+        searchPanelRef.current?.contains(target)
+      ) {
+        return;
+      }
+
+      setIsSearchOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+
+    return () =>
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [isSearchOpen]);
 
   const favoriteCount = isReady ? favorites.length : 0;
   const favoriteLabel =
@@ -59,6 +99,7 @@ export default function Header() {
             <Link
               key={link.href}
               href={link.href}
+              onClick={() => setIsSearchOpen(false)}
               className="text-sm font-medium text-zinc-600 transition-colors hover:text-zinc-950"
             >
               {link.label}
@@ -68,9 +109,19 @@ export default function Header() {
 
         <div className="flex items-center gap-1">
           <div className="flex items-center gap-0.5">
-            <IconAction label="Search">
-              <FiSearch className="size-5" aria-hidden />
-            </IconAction>
+            <div ref={searchToggleRef}>
+              <IconAction
+                label="Search"
+                isExpanded={isSearchOpen}
+                controlsId="site-search-panel"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  setIsSearchOpen((open) => !open);
+                }}
+              >
+                <FiSearch className="size-5" aria-hidden />
+              </IconAction>
+            </div>
             <Link
               href="/favorites"
               aria-label={favoriteLabel}
@@ -123,6 +174,18 @@ export default function Header() {
         </div>
       </div>
 
+      {isSearchOpen ? (
+        <div
+          id="site-search-panel"
+          ref={searchPanelRef}
+          className="border-t border-zinc-200 bg-white"
+        >
+          <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
+            <SearchPanel autoFocus onClose={() => setIsSearchOpen(false)} />
+          </div>
+        </div>
+      ) : null}
+
       {isMenuOpen ? (
         <nav
           id="mobile-nav"
@@ -135,7 +198,10 @@ export default function Header() {
                 <Link
                   href={link.href}
                   className="block rounded-md px-3 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 hover:text-zinc-950"
-                  onClick={() => setIsMenuOpen(false)}
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    setIsSearchOpen(false);
+                  }}
                 >
                   {link.label}
                 </Link>
@@ -145,7 +211,10 @@ export default function Header() {
               <Link
                 href="/profile"
                 className="block rounded-md px-3 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 hover:text-zinc-950"
-                onClick={() => setIsMenuOpen(false)}
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  setIsSearchOpen(false);
+                }}
               >
                 Profile{user ? ` (${user.firstName})` : ""}
               </Link>
@@ -154,7 +223,10 @@ export default function Header() {
               <Link
                 href="/favorites"
                 className="block rounded-md px-3 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 hover:text-zinc-950"
-                onClick={() => setIsMenuOpen(false)}
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  setIsSearchOpen(false);
+                }}
               >
                 Favorites{favoriteCount > 0 ? ` (${favoriteCount})` : ""}
               </Link>
