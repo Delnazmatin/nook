@@ -9,15 +9,17 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { sha256Hex } from "@/lib/sha256";
 
 /**
- * Demo-only authentication for a static catalog. A single account lives in this
- * browser's localStorage and the password is kept as a SHA-256 hash. This is not
- * real security: anything stored client-side can be read or replaced by the
+ * Demo-only authentication for a static catalog. Accounts live in this
+ * browser's localStorage and the password is kept as a SHA-256 hash. This is
+ * not real security: anything stored client-side can be read or replaced by the
  * visitor, so no order or payment data should ever depend on it.
  */
 
-const ACCOUNT_KEY = "cataloge:account";
+const ACCOUNTS_KEY = "cataloge:accounts";
+const LEGACY_ACCOUNT_KEY = "cataloge:account";
 const SESSION_KEY = "cataloge:session";
 
 export type ProfileUser = {
@@ -36,6 +38,9 @@ type ProfileSession = {
   email: string;
 };
 
+/** Accounts keyed by their lowercase email address. */
+type AccountMap = Record<string, ProfileAccount>;
+
 export type RegisterInput = {
   firstName: string;
   lastName: string;
@@ -49,15 +54,11 @@ export type SignInInput = {
   password: string;
 };
 
-export type RegisterResult =
-  { ok: true } | { ok: false; reason: "exists" | "unavailable" };
+export type RegisterResult = { ok: true } | { ok: false; reason: "exists" };
 
 export type SignInResult =
   | { ok: true }
-  | {
-      ok: false;
-      reason: "missing-account" | "invalid-credentials" | "unavailable";
-    };
+  | { ok: false; reason: "missing-account" | "invalid-credentials" };
 
 export type ProfileContextValue = {
   user: ProfileUser | null;
@@ -84,7 +85,8 @@ const ProfileContext = createContext<ProfileContextValue | null>(null);
  * matches the server HTML, and a separate flag that flips after hydration.
  */
 let currentSnapshot: ProfileSnapshot = EMPTY_SNAPSHOT;
-let lastAccountRaw: string | null = null;
+let lastAccountsRaw: string | null = null;
+let lastLegacyRaw: string | null = null;
 let lastSessionRaw: string | null = null;
 let hasLoaded = false;
 const listeners = new Set<() => void>();
@@ -132,11 +134,15 @@ function parseAccount(rawValue: string | null): ProfileAccount | null {
     return null;
   }
 
-  if (typeof parsed !== "object" || parsed === null) {
+  return toAccount(parsed);
+}
+
+function toAccount(value: unknown): ProfileAccount | null {
+  if (typeof value !== "object" || value === null) {
     return null;
   }
 
-  const candidate = parsed as Record<string, unknown>;
+  const candidate = value as Record<string, unknown>;
 
   if (
     !isNonEmptyString(candidate.firstName) ||
@@ -157,6 +163,46 @@ function parseAccount(rawValue: string | null): ProfileAccount | null {
     passwordHash: candidate.passwordHash,
     createdAt: candidate.createdAt,
   };
+}
+
+function parseAccounts(
+  accountsRaw: string | null,
+  legacyRaw: string | null,
+): AccountMap {
+  const accounts: AccountMap = {};
+
+  if (accountsRaw) {
+    let parsed: unknown = null;
+
+    try {
+      parsed = JSON.parse(accountsRaw);
+    } catch {
+      parsed = null;
+    }
+
+    if (typeof parsed === "object" && parsed !== null) {
+      for (const value of Object.values(parsed)) {
+        const account = toAccount(value);
+
+        if (account) {
+          accounts[account.email] = account;
+        }
+      }
+    }
+  }
+
+  // Accounts saved when the browser could only hold one.
+  const legacyAccount = parseAccount(legacyRaw);
+
+  if (legacyAccount && !accounts[legacyAccount.email]) {
+    accounts[legacyAccount.email] = legacyAccount;
+  }
+
+  return accounts;
+}
+
+function serializeAccounts(accounts: AccountMap): string | null {
+  return Object.keys(accounts).length === 0 ? null : JSON.stringify(accounts);
 }
 
 function parseSession(rawValue: string | null): ProfileSession | null {
@@ -191,19 +237,21 @@ function toUser(account: ProfileAccount): ProfileUser {
 }
 
 function buildSnapshot(
-  accountRaw: string | null,
+  accountsRaw: string | null,
+  legacyRaw: string | null,
   sessionRaw: string | null,
 ): ProfileSnapshot {
-  const account = parseAccount(accountRaw);
+  const accounts = parseAccounts(accountsRaw, legacyRaw);
 
-  if (!account) {
+  if (Object.keys(accounts).length === 0) {
     return EMPTY_SNAPSHOT;
   }
 
   const session = parseSession(sessionRaw);
+  const account = session ? accounts[session.email] : undefined;
 
   return {
-    user: session?.email === account.email ? toUser(account) : null,
+    user: account ? toUser(account) : null,
     isRegistered: true,
   };
 }
@@ -214,16 +262,24 @@ function loadOnce(): void {
   }
 
   hasLoaded = true;
-  lastAccountRaw = readRawValue(ACCOUNT_KEY);
+  lastAccountsRaw = readRawValue(ACCOUNTS_KEY);
+  lastLegacyRaw = readRawValue(LEGACY_ACCOUNT_KEY);
   lastSessionRaw = readRawValue(SESSION_KEY);
-  currentSnapshot = buildSnapshot(lastAccountRaw, lastSessionRaw);
+  currentSnapshot = buildSnapshot(
+    lastAccountsRaw,
+    lastLegacyRaw,
+    lastSessionRaw,
+  );
 }
 
-function readAccountRaw(): string | null {
+function readAccounts(): AccountMap {
   loadOnce();
 
   // Fall back to the in-memory copy when storage is unreadable (private mode).
-  return readRawValue(ACCOUNT_KEY) ?? lastAccountRaw;
+  return parseAccounts(
+    readRawValue(ACCOUNTS_KEY) ?? lastAccountsRaw,
+    readRawValue(LEGACY_ACCOUNT_KEY) ?? lastLegacyRaw,
+  );
 }
 
 function getProfileSnapshot(): ProfileSnapshot {
@@ -237,32 +293,37 @@ function getServerProfileSnapshot(): ProfileSnapshot {
 }
 
 function syncFromStorage(): void {
-  const accountRaw = readRawValue(ACCOUNT_KEY);
+  const accountsRaw = readRawValue(ACCOUNTS_KEY);
+  const legacyRaw = readRawValue(LEGACY_ACCOUNT_KEY);
   const sessionRaw = readRawValue(SESSION_KEY);
 
   if (
     hasLoaded &&
-    accountRaw === lastAccountRaw &&
+    accountsRaw === lastAccountsRaw &&
+    legacyRaw === lastLegacyRaw &&
     sessionRaw === lastSessionRaw
   ) {
     return;
   }
 
   hasLoaded = true;
-  lastAccountRaw = accountRaw;
+  lastAccountsRaw = accountsRaw;
+  lastLegacyRaw = legacyRaw;
   lastSessionRaw = sessionRaw;
-  currentSnapshot = buildSnapshot(accountRaw, sessionRaw);
+  currentSnapshot = buildSnapshot(accountsRaw, legacyRaw, sessionRaw);
   notifyListeners();
 }
 
-function commit(accountRaw: string | null, sessionRaw: string | null): void {
-  writeRawValue(ACCOUNT_KEY, accountRaw);
+function commit(accountsRaw: string | null, sessionRaw: string | null): void {
+  writeRawValue(ACCOUNTS_KEY, accountsRaw);
+  writeRawValue(LEGACY_ACCOUNT_KEY, null);
   writeRawValue(SESSION_KEY, sessionRaw);
 
   hasLoaded = true;
-  lastAccountRaw = accountRaw;
+  lastAccountsRaw = accountsRaw;
+  lastLegacyRaw = null;
   lastSessionRaw = sessionRaw;
-  currentSnapshot = buildSnapshot(accountRaw, sessionRaw);
+  currentSnapshot = buildSnapshot(accountsRaw, null, sessionRaw);
   notifyListeners();
 }
 
@@ -272,7 +333,8 @@ function subscribeToProfile(onStoreChange: () => void): () => void {
   function handleStorage(event: StorageEvent): void {
     if (
       event.key !== null &&
-      event.key !== ACCOUNT_KEY &&
+      event.key !== ACCOUNTS_KEY &&
+      event.key !== LEGACY_ACCOUNT_KEY &&
       event.key !== SESSION_KEY
     ) {
       return;
@@ -301,58 +363,58 @@ function getServerHydratedSnapshot(): boolean {
   return false;
 }
 
-async function hashPassword(password: string): Promise<string | null> {
-  if (typeof crypto === "undefined" || !crypto.subtle) {
-    return null;
+async function hashPassword(password: string): Promise<string> {
+  if (typeof crypto !== "undefined" && crypto.subtle) {
+    try {
+      const digest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(password),
+      );
+
+      return Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
+    } catch {
+      // Fall through to the portable implementation below.
+    }
   }
 
-  try {
-    const digest = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(password),
-    );
-
-    return Array.from(new Uint8Array(digest), (byte) =>
-      byte.toString(16).padStart(2, "0"),
-    ).join("");
-  } catch {
-    return null;
-  }
+  // `crypto.subtle` is undefined outside secure contexts, which includes a
+  // plain-HTTP LAN address such as http://192.168.x.x:3000 opened on a phone.
+  return sha256Hex(password);
 }
 
 async function registerAccount(input: RegisterInput): Promise<RegisterResult> {
-  const accountRaw = readAccountRaw();
+  const accounts = readAccounts();
+  const email = input.email.trim().toLowerCase();
 
-  if (parseAccount(accountRaw)) {
+  if (accounts[email]) {
     return { ok: false, reason: "exists" };
   }
 
   const passwordHash = await hashPassword(input.password);
 
-  if (!passwordHash) {
-    return { ok: false, reason: "unavailable" };
-  }
-
-  const account: ProfileAccount = {
+  accounts[email] = {
     firstName: input.firstName.trim(),
     lastName: input.lastName.trim(),
-    email: input.email.trim().toLowerCase(),
+    email,
     phone: input.phone.trim(),
     passwordHash,
     createdAt: new Date().toISOString(),
   };
 
   commit(
-    JSON.stringify(account),
-    JSON.stringify({ email: account.email } satisfies ProfileSession),
+    serializeAccounts(accounts),
+    JSON.stringify({ email } satisfies ProfileSession),
   );
 
   return { ok: true };
 }
 
 async function signInAccount(input: SignInInput): Promise<SignInResult> {
-  const accountRaw = readAccountRaw();
-  const account = parseAccount(accountRaw);
+  const accounts = readAccounts();
+  const email = input.email.trim().toLowerCase();
+  const account = accounts[email];
 
   if (!account) {
     return { ok: false, reason: "missing-account" };
@@ -360,18 +422,12 @@ async function signInAccount(input: SignInInput): Promise<SignInResult> {
 
   const passwordHash = await hashPassword(input.password);
 
-  if (!passwordHash) {
-    return { ok: false, reason: "unavailable" };
-  }
-
-  const email = input.email.trim().toLowerCase();
-
-  if (account.email !== email || account.passwordHash !== passwordHash) {
+  if (account.passwordHash !== passwordHash) {
     return { ok: false, reason: "invalid-credentials" };
   }
 
   commit(
-    JSON.stringify(account),
+    serializeAccounts(accounts),
     JSON.stringify({ email: account.email } satisfies ProfileSession),
   );
 
@@ -379,7 +435,7 @@ async function signInAccount(input: SignInInput): Promise<SignInResult> {
 }
 
 function signOutAccount(): void {
-  commit(readAccountRaw(), null);
+  commit(serializeAccounts(readAccounts()), null);
 }
 
 type ProfileProviderProps = {

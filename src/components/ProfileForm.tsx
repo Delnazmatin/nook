@@ -11,7 +11,7 @@ const labelClassName = "text-sm font-medium text-zinc-950";
 export type ProfileFormMode = "register" | "sign-in";
 
 type ProfileFormProps = {
-  mode: ProfileFormMode;
+  initialMode: ProfileFormMode;
 };
 
 type FieldName =
@@ -30,8 +30,6 @@ const resultMessages = {
   exists: "An account already exists in this browser. Sign in instead.",
   "missing-account": "No account was found in this browser. Create one first.",
   "invalid-credentials": "That email and password combination is not correct.",
-  unavailable:
-    "Saving a password is not available in this browser. Try again over a secure connection.",
 } as const;
 
 function readValues(formData: FormData): FormValues {
@@ -189,8 +187,11 @@ function Field({
   );
 }
 
-export default function ProfileForm({ mode }: ProfileFormProps): ReactElement {
-  const { register, signIn } = useProfile();
+export default function ProfileForm({
+  initialMode,
+}: ProfileFormProps): ReactElement {
+  const { register, signIn, isRegistered } = useProfile();
+  const [mode, setMode] = useState<ProfileFormMode>(initialMode);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -198,6 +199,12 @@ export default function ProfileForm({ mode }: ProfileFormProps): ReactElement {
   const isRegister = mode === "register";
   const submitLabel = isRegister ? "Create account" : "Sign in";
   const pendingLabel = isRegister ? "Creating account…" : "Signing in…";
+
+  function switchMode(nextMode: ProfileFormMode): void {
+    setMode(nextMode);
+    setErrors({});
+    setFormError(null);
+  }
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
@@ -351,6 +358,18 @@ export default function ProfileForm({ mode }: ProfileFormProps): ReactElement {
       >
         {isSubmitting ? pendingLabel : submitLabel}
       </button>
+
+      {isRegistered ? (
+        <button
+          type="button"
+          onClick={() => switchMode(isRegister ? "sign-in" : "register")}
+          className="text-gold self-start text-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-950 dark:focus-visible:outline-zinc-50"
+        >
+          {isRegister
+            ? "Already have an account? Sign in"
+            : "Create a new account"}
+        </button>
+      ) : null}
 
       {formError ? (
         <p
